@@ -37,7 +37,7 @@ import java.time.*
     val rangeFlow = remember(from, rangeEnd) { vm.rangeEntries(from, rangeEnd) }
     val range by rangeFlow.collectAsStateWithLifecycle(emptyList())
     val payable = pending.filter { it.completedAt <= Rules.end(through) }
-    val total = Rules.total(payable.map { it.wageCentsSnapshot })
+    val total = Rules.total(payable.map { it.wageAmountCents })
     val lastEnd = settlements.firstOrNull()?.periodEnd ?: Rules.beginning
     val validEnd = Rules.end(through) > lastEnd && through < Rules.today()
     Column {
@@ -53,9 +53,9 @@ import java.time.*
                 DateChoice("到（包含这一天）", rangeEnd) { rangeEndText = it.toString() }
                 if (from > rangeEnd) Text("开始日期不能晚于结束日期", color = MaterialTheme.colorScheme.error)
                 else {
-                    Row { Amount("员工工资", Rules.total(range.map { it.wageCentsSnapshot }), Modifier.weight(1f)); Amount("店铺营业额", Rules.total(range.map { it.revenueCentsSnapshot }), Modifier.weight(1f)) }
+                    Row { Amount("员工工资", Rules.total(range.map { it.wageAmountCents }), Modifier.weight(1f)); Amount("店铺营业额", Rules.total(range.map { it.revenueAmountCents }), Modifier.weight(1f)) }
                     WageRows(range, employees)
-                    Text("共${range.size}次工作 · 按工作日期统计，含已结账和未结账的记录。", style = MaterialTheme.typography.bodySmall)
+                    Text("共${Rules.quantityText(range.sumOf { it.quantityTenths })}次工作 · 按工作日期统计，含已结账和未结账的记录。", style = MaterialTheme.typography.bodySmall)
                     if (rangeEnd > Rules.today()) Text("含未来的预记账目，请与已完成的工作区分。", color = MaterialTheme.colorScheme.primary)
                 }
                 Text("这里只查看，不生成工资单，不改变下次结账的起点。", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
@@ -112,7 +112,7 @@ import java.time.*
             }
         }
     }
-    if (confirm) Confirm("保存这份工资单？", "${Rules.periodText(lastEnd, Rules.end(through))}\n共${payable.size}次工作，工资${Rules.money(total)}。\n以后补记这段日期的工作，会修正这份工资单，不会重复算到下一期。", { confirm = false }, "确认保存") {
+    if (confirm) Confirm("保存这份工资单？", "${Rules.periodText(lastEnd, Rules.end(through))}\n共${Rules.quantityText(payable.sumOf { it.quantityTenths })}次工作，工资${Rules.money(total)}。\n以后补记这段日期的工作，会修正这份工资单，不会重复算到下一期。", { confirm = false }, "确认保存") {
         confirm = false; busy = true
         vm.action("工资单已保存", onComplete = { busy = false }) { vm.ledger.settle(true, through = through) }
     }
@@ -125,6 +125,6 @@ import java.time.*
 @Composable private fun WageRows(entries: List<WorkEntry>, employees: List<Employee>) {
     val sums = entries.groupBy { it.employeeId }
     employees.filter { it.id in sums }.forEach { employee -> Row(Modifier.fillMaxWidth()) {
-        Text(employee.name, Modifier.weight(1f)); Text(Rules.money(Rules.total(sums[employee.id].orEmpty().map { it.wageCentsSnapshot })))
+        Text(employee.name, Modifier.weight(1f)); Text(Rules.money(Rules.total(sums[employee.id].orEmpty().map { it.wageAmountCents })))
     } }
 }

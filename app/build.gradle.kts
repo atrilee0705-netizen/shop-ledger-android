@@ -6,18 +6,19 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val deviceCheck = providers.gradleProperty("deviceCheck").orNull == "true"
+val detailCheck = providers.gradleProperty("detailCheck").orNull == "true"
+val deviceCheck = providers.gradleProperty("deviceCheck").orNull == "true" || detailCheck
 
 android {
     namespace = "cn.shopledger"
     compileSdk = 35
     defaultConfig {
-        applicationId = if (deviceCheck) "cn.shopledger.devicetest" else "cn.shopledger"
-        manifestPlaceholders["appLabel"] = if (deviceCheck) "小店账本·调试" else "小店账本"
+        applicationId = if (detailCheck) "cn.shopledger.detailtest" else if (deviceCheck) "cn.shopledger.devicetest" else "cn.shopledger"
+        manifestPlaceholders["appLabel"] = if (detailCheck) "小店账本·明细测试" else if (deviceCheck) "小店账本·调试" else "小店账本"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = 9
+        versionName = "1.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

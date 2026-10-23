@@ -61,11 +61,13 @@ class AppFlowTest {
         waitFor { ui.onAllNodesWithContentDescription("展开测试店员").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithContentDescription("展开测试店员").press()
         frame()
-        ui.onNodeWithText("次数").performTextReplacement("2")
+        ui.onNodeWithText("次数").performTextReplacement("3")
         ui.onNodeWithContentDescription("为测试店员记录基础服务").press()
-        waitFor { runBlocking { app.ledger.dao.entries().size == 2 } }
+        waitFor { runBlocking { app.ledger.dao.entries().size == 3 } }
+        ui.onNodeWithContentDescription("为测试店员记录基础服务").press()
+        waitFor { runBlocking { app.ledger.dao.entries().size == 4 } }
         ui.onNodeWithText("店铺营业额").assertExists()
-        ui.onNodeWithText("¥120.00").assertExists()
+        ui.onNodeWithText("¥240.00").assertExists()
         capture("01-daily-ledger")
         ui.onNodeWithText("当天明细").press()
         frame()

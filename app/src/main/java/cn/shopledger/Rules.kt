@@ -37,6 +37,21 @@ object Rules {
         return BigDecimal(text.trim()).movePointRight(2).setScale(0, RoundingMode.UNNECESSARY)
             .longValueExact().also { require(it in 0..MAX_CENTS) { "单笔金额过大" } }
     }
+    const val MAX_QUANTITY_TENTHS = 9990
+    // Counts use integer tenths throughout; never binary floating point for money.
+    fun parseQuantity(text: String): Int {
+        val value = text.trim()
+        require(Regex("(?:[0-9]{1,3}(?:\\.[0-9]?)?|\\.[0-9])").matches(value)) { "次数请输入0.1至999，最多一位小数" }
+        return BigDecimal(value).movePointRight(1).intValueExact().also {
+            require(it in 1..MAX_QUANTITY_TENTHS) { "次数请输入0.1至999，最多一位小数" }
+        }
+    }
+    fun quantityText(tenths: Int): String = BigDecimal.valueOf(tenths.toLong(), 1).stripTrailingZeros().toPlainString()
+    fun quantityAmount(unitCents: Long, tenths: Int): Long {
+        require(unitCents in 0..MAX_CENTS && tenths in 1..MAX_QUANTITY_TENTHS)
+        // Each saved line is rounded HALF_UP to a cent, consistently in Kotlin and SQL.
+        return Math.addExact(Math.multiplyExact(unitCents, tenths.toLong()), 5L) / 10L
+    }
     fun name(text: String): String = text.trim().also { require(it.isNotEmpty() && it.length <= 80) { "名称需为1–80个字符" } }
     fun clock(text: String): LocalTime {
         val parts = Regex("(\\d{1,2})(?::(\\d{2}))?").matchEntire(text.trim()) ?: throw IllegalArgumentException("时间请填12:00这样的格式")

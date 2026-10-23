@@ -98,7 +98,7 @@ import cn.shopledger.data.*
             } catch (e: Exception) { error = e.message }
         }) { Text("保存") } }, dismissButton = { TextButton(onClick = { adding = false; editing = null }) { Text("取消") } })
     }
-    archiving?.let { task -> Confirm(if (task.isArchived) "恢复任务" else "停用任务", "历史任务名称、工资和收入快照都会保留。", { archiving = null }) {
+    archiving?.let { task -> Confirm(if (task.isArchived) "恢复任务" else "停用任务", "停用后只从新记账选项中隐藏。过往账目、任务名称、工资、营业额和已保存工资单全部保留；以后也可恢复使用。", { archiving = null }) {
         archiving = null
         vm.action("任务状态已更新") { vm.ledger.saveTask(task.id, task.name, task.wageCents, task.revenueCents, !task.isArchived) }
     } }

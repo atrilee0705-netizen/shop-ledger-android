@@ -19,9 +19,16 @@ class Ledger(val db: LedgerDb) {
     suspend fun add(employeeId: String, taskId: String, date: LocalDate, note: String, now: Long = Rules.now()): WorkEntry =
         addMany(employeeId, taskId, date, note, 1, now).first()
 
-    suspend fun addMany(employeeId: String, taskId: String, date: LocalDate, note: String, quantity: Int, now: Long = Rules.now()): List<WorkEntry> = db.withTransaction {
+    suspend fun addMany(employeeId: String, taskId: String, date: LocalDate, note: String, quantity: Int, now: Long = Rules.now()): List<WorkEntry> {
         require(quantity in 1..999) { "次数请输入1至999" }
-        require(dao.entryCount() + quantity <= Rules.MAX_ROWS) { "记录已达容量上限，请先保留完整备份" }
+        return addQuantity(employeeId, taskId, date, note, quantity * 10, now)
+    }
+    suspend fun addQuantity(employeeId: String, taskId: String, date: LocalDate, note: String, quantityTenths: Int, now: Long = Rules.now()): List<WorkEntry> = db.withTransaction {
+        require(quantityTenths in 1..Rules.MAX_QUANTITY_TENTHS) { "次数请输入0.1至999，最多一位小数" }
+        val whole = quantityTenths / 10
+        val remainder = quantityTenths % 10
+        val lineCount = whole + if (remainder == 0) 0 else 1
+        require(dao.entryCount() + lineCount <= Rules.MAX_ROWS) { "记录已达容量上限，请先保留完整备份" }
         val employee = requireNotNull(dao.employee(employeeId)) { "员工不存在" }
         val task = requireNotNull(dao.task(taskId)) { "任务不存在" }
         require(!employee.isArchived && !task.isArchived) { "员工或任务已停用" }
@@ -29,8 +36,10 @@ class Ledger(val db: LedgerDb) {
         Rules.checkTime(at); Rules.checkTime(now)
         val checkedNote = checkedNote(note)
         val original = dao.coveringSettlement(at)
-        val rows = List(quantity) { WorkEntry(uuid(), employeeId, taskId, task.name, task.wageCents, task.revenueCents,
-            at, checkedNote, now, original?.id) }
+        // Keep whole-task rows individually editable, as in older versions; save the
+        // remaining 0.1–0.9 task as one explicitly labelled fractional row.
+        val rows = List(lineCount) { index -> WorkEntry(uuid(), employeeId, taskId, task.name, task.wageCents, task.revenueCents,
+            at, checkedNote, now, original?.id, if (index < whole) 10 else remainder) }
         dao.insertEntries(rows)
         if (original != null) {
             val before = Rules.total(dao.settlementItems().filter { it.settlementId == original.id }.map { it.amountCents })
@@ -38,22 +47,27 @@ class Ledger(val db: LedgerDb) {
             dao.clearSettlementItems(original.id); dao.insertItems(updated)
             dao.updateSettlement(original.copy(revision = original.revision + 1))
             dao.insertAdjustments(listOf(SettlementAdjustment(uuid(), original.id, before, Rules.total(updated.map { it.amountCents }),
-                "补记${employee.name}的${task.name} ${quantity}次（${date.format(Rules.dateFormat)}）", now)))
+                "补记${employee.name}的${task.name} ${Rules.quantityText(quantityTenths)}次（${date.format(Rules.dateFormat)}）", now)))
             dao.saveDelivery(SettlementDelivery(original.id))
         }
         rows
     }
-    suspend fun edit(id: String, completedAt: Long, note: String) = db.withTransaction {
-        val entry = requireNotNull(dao.entry(id)) { "记录不存在" }
-        require(entry.settlementId == null) { "这条记录已列入工资单，请先撤销最近一期结账再修改" }
+    suspend fun edit(id: String, completedAt: Long, note: String) = editMany(listOf(id), completedAt, note)
+    suspend fun editMany(ids: List<String>, completedAt: Long, note: String) = db.withTransaction {
+        require(ids.isNotEmpty()) { "没有可修改的记录" }
+        val entries = ids.distinct().map { requireNotNull(dao.entry(it)) { "记录不存在，请返回明细重新选择" } }
+        require(entries.all { it.settlementId == null }) { "这条记录已列入工资单，请先撤销最近一期结账再修改" }
         Rules.checkTime(completedAt)
         require(dao.coveringSettlement(completedAt) == null) { "移入已结账日期请用补记功能，原记录可先删除" }
-        dao.updateEntry(entry.copy(completedAt = completedAt, note = checkedNote(note)))
+        val checked = checkedNote(note)
+        entries.forEach { dao.updateEntry(it.copy(completedAt = completedAt, note = checked)) }
     }
-    suspend fun delete(id: String) = db.withTransaction {
-        val entry = requireNotNull(dao.entry(id)) { "记录不存在" }
-        require(entry.settlementId == null) { "这条记录已列入工资单，请先撤销最近一期结账再删除" }
-        dao.deleteEntry(id)
+    suspend fun delete(id: String) = deleteMany(listOf(id))
+    suspend fun deleteMany(ids: List<String>) = db.withTransaction {
+        require(ids.isNotEmpty()) { "没有可删除的记录" }
+        val entries = ids.distinct().map { requireNotNull(dao.entry(it)) { "记录不存在，请返回明细重新选择" } }
+        require(entries.all { it.settlementId == null }) { "这条记录已列入工资单，请先撤销最近一期结账再删除" }
+        entries.forEach { dao.deleteEntry(it.id) }
     }
     // Only whole, finished Beijing days can be closed. Membership freezes each slip;
     // a later backfill is assigned to its original slip and creates a revision.
@@ -98,7 +112,7 @@ class Ledger(val db: LedgerDb) {
     }
     private fun wageItems(id: String, entries: List<WorkEntry>): List<SettlementItem> =
         entries.groupBy { it.employeeId }.map { (employee, rows) ->
-            SettlementItem(id, employee, Rules.total(rows.map { it.wageCentsSnapshot }))
+            SettlementItem(id, employee, Rules.total(rows.map { it.wageAmountCents }))
         }.also { Rules.total(it.map { row -> row.amountCents }) }
     suspend fun undo(id: String) = db.withTransaction {
         val latest = requireNotNull(dao.latestSettlement()) { "没有可撤销的结算" }
