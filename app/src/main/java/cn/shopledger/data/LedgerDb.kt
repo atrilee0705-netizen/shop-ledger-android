@@ -7,10 +7,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(entities = [Employee::class, TaskType::class, WorkEntry::class, Settlement::class,
     SettlementItem::class, SettlementAdjustment::class, SettlementDelivery::class, Settings::class, LocalState::class,
-    RecoveryProfile::class, RecoveryAttempts::class], version = 3, exportSchema = true)
+    RecoveryProfile::class, RecoveryAttempts::class], version = 4, exportSchema = true)
 abstract class LedgerDb : RoomDatabase() {
     abstract fun dao(): LedgerDao
     companion object {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entries ADD COLUMN quantityTenths INTEGER NOT NULL DEFAULT 10")
+            }
+        }
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE recovery_profile (id INTEGER NOT NULL PRIMARY KEY, keyId TEXT NOT NULL, keySecret TEXT NOT NULL, createdAt INTEGER NOT NULL, questionsJson TEXT, autoEmail INTEGER NOT NULL, sentAt INTEGER, sentTo TEXT, lastError TEXT)")

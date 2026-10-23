@@ -15,7 +15,8 @@ data class TaskType(@PrimaryKey val id: String, val name: String, val wageCents:
 ], indices = [Index("employeeId"), Index("taskTypeId"), Index("completedAt"), Index("settlementId")])
 data class WorkEntry(@PrimaryKey val id: String, val employeeId: String, val taskTypeId: String,
     val taskNameSnapshot: String, val wageCentsSnapshot: Long, val revenueCentsSnapshot: Long,
-    val completedAt: Long, val note: String, val createdAt: Long, val settlementId: String? = null)
+    val completedAt: Long, val note: String, val createdAt: Long, val settlementId: String? = null,
+    @ColumnInfo(defaultValue = "10") val quantityTenths: Int = 10)
 
 @Serializable @Entity(tableName = "settlements", indices = [Index(value = ["periodEnd"], unique = true)])
 data class Settlement(@PrimaryKey val id: String, val periodStart: Long, val periodEnd: Long, val settledAt: Long, val isEarly: Boolean,
@@ -64,4 +65,8 @@ data class RecoveryAttempts(@PrimaryKey val id: Int = 1, val failures: Int = 0, 
 
 data class EmployeeTotal(val employeeId: String, val name: String, val amount: Long)
 data class DailyTotal(val wage: Long, val revenue: Long)
-data class TaskCount(val employeeId: String, val taskTypeId: String, val count: Int)
+data class TaskCount(val employeeId: String, val taskTypeId: String, val countTenths: Int)
+
+// Original snapshot fields remain the historical per-task prices.
+val WorkEntry.wageAmountCents: Long get() = cn.shopledger.Rules.quantityAmount(wageCentsSnapshot, quantityTenths)
+val WorkEntry.revenueAmountCents: Long get() = cn.shopledger.Rules.quantityAmount(revenueCentsSnapshot, quantityTenths)

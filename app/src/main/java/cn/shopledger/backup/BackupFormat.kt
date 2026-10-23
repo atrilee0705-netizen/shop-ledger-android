@@ -15,7 +15,7 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 @Serializable
-data class LedgerSnapshot(val version: Int = 2, val exportedAt: Long,
+data class LedgerSnapshot(val version: Int = 3, val exportedAt: Long,
     val employees: List<Employee>, val tasks: List<TaskType>, val entries: List<WorkEntry>,
     val settlements: List<Settlement>, val items: List<SettlementItem>, val settings: Settings,
     val backgroundBase64: String? = null, val adjustments: List<SettlementAdjustment> = emptyList())
@@ -26,7 +26,7 @@ object BackupFormat {
         return json.encodeToString(snapshot).toByteArray(Charsets.UTF_8)
     }
     internal fun decodeSnapshot(bytes: ByteArray): LedgerSnapshot = json.decodeFromString<LedgerSnapshot>(bytes.toString(Charsets.UTF_8)).also(::validate)
-    fun normalize(s: LedgerSnapshot): LedgerSnapshot = if (s.version == 2) s else s.copy(version = 2,
+    fun normalize(s: LedgerSnapshot): LedgerSnapshot = if (s.version >= 2) s.copy(version = 3) else s.copy(version = 3,
         entries = s.entries.map { entry -> entry.copy(settlementId = s.settlements.find {
             entry.completedAt > it.periodStart && entry.completedAt <= it.periodEnd
         }?.id) })
@@ -83,7 +83,7 @@ object BackupFormat {
         return bytes.toByteArray()
     }
     fun validate(s: LedgerSnapshot) {
-        require(s.version in 1..2) { "不支持此账本版本" }
+        require(s.version in 1..3) { "不支持此账本版本" }
         Rules.checkTime(s.exportedAt)
         require(s.entries.size <= Rules.MAX_ROWS && s.employees.size <= 100_000 && s.tasks.size <= 100_000)
         fun <T> unique(rows: List<T>, id: (T) -> String): Set<String> {
@@ -101,9 +101,10 @@ object BackupFormat {
         s.entries.forEach {
             require(it.employeeId in employees && it.taskTypeId in tasks) { "备份工作记录缺少员工或任务" }
             Rules.name(it.taskNameSnapshot); amount(it.wageCentsSnapshot); amount(it.revenueCentsSnapshot)
+            require(it.quantityTenths in 1..10 && (s.version >= 3 || it.quantityTenths == 10)) { "备份包含无效次数" }
             Rules.checkTime(it.completedAt); Rules.checkTime(it.createdAt); require(it.note.length <= 1000)
         }
-        Rules.total(s.entries.map { it.wageCentsSnapshot }); Rules.total(s.entries.map { it.revenueCentsSnapshot })
+        Rules.total(s.entries.map { it.wageAmountCents }); Rules.total(s.entries.map { it.revenueAmountCents })
         require(s.items.map { it.settlementId to it.employeeId }.toSet().size == s.items.size) { "结算明细重复" }
         s.items.forEach { require(it.employeeId in employees && it.settlementId in settlements && it.amountCents >= 0) }
         var end = Rules.beginning
@@ -121,7 +122,7 @@ object BackupFormat {
             require(settlement.periodStart == end && settlement.periodEnd > end && settlement.settledAt >= settlement.periodEnd && settlement.settledAt <= s.exportedAt) { "结算区间不连续或时间无效" }
             Rules.checkTime(settlement.periodEnd)
             val sums = (assigned[settlement.id] ?: emptyList()).groupBy { it.employeeId }
-                .mapValues { (_, rows) -> Rules.total(rows.map { it.wageCentsSnapshot }) }
+                .mapValues { (_, rows) -> Rules.total(rows.map { it.wageAmountCents }) }
             require((items[settlement.id] ?: emptyList()).associate { it.employeeId to it.amountCents } == sums) { "工资单与工作记录金额不一致" }
             val corrections = (changes[settlement.id] ?: emptyList()).sortedBy { it.correctedAt }
             require(settlement.revision == corrections.size + 1) { "工资单修订次数不一致" }

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,12 +23,26 @@ import cn.shopledger.backup.SettlementScheduler
 
 @Composable fun SettingsScreen(vm: LedgerViewModel, navigate: (String) -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val wheelStrength by vm.app.wheelPreferences.strength.collectAsStateWithLifecycle()
+    val view = LocalView.current
+    val wheelHaptics = remember(view) { WheelHaptics(view) }
     var day by remember(settings.settlementDay) { mutableStateOf(settings.settlementDay.toString()) }
     var auto by remember(settings.autoSettlement) { mutableStateOf(settings.autoSettlement) }
     var sendReport by remember(settings.sendSettlementReport) { mutableStateOf(settings.sendSettlementReport) }
     var time by remember(settings.settlementHour, settings.settlementMinute) { mutableStateOf("%02d:%02d".format(settings.settlementHour, settings.settlementMinute)) }
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PageTitle("设置", "管好员工、任务和每一份账本")
+        LedgerCard {
+            Text("次数滚轮震动", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("关闭", "轻", "中", "强").forEachIndexed { level, title ->
+                    FilterChip(wheelStrength == level, { vm.app.wheelPreferences.setStrength(level); wheelHaptics.tick(level) },
+                        { Text(title) }, modifier = Modifier.weight(1f))
+                }
+            }
+            Text("选好立即生效，滚动每格震一下。默认轻震；关闭后滚轮不震动。手机系统关闭触感时也不震动。", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(enabled = wheelStrength != 0, onClick = { wheelHaptics.tick(wheelStrength) }) { Text("试一下震动") }
+        }
         LedgerCard {
             Text("每月自动结账", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

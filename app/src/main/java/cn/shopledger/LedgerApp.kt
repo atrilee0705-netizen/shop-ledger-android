@@ -11,7 +11,8 @@ import cn.shopledger.data.*
 import kotlinx.coroutines.*
 
 class LedgerApp : Application() {
-    val ledger: Ledger by lazy { Ledger(Room.databaseBuilder(this, LedgerDb::class.java, "shop-ledger.db").addMigrations(LedgerDb.MIGRATION_1_2, LedgerDb.MIGRATION_2_3).build()) }
+    val wheelPreferences by lazy { WheelPreferences(this) }
+    val ledger: Ledger by lazy { Ledger(Room.databaseBuilder(this, LedgerDb::class.java, "shop-ledger.db").addMigrations(LedgerDb.MIGRATION_1_2, LedgerDb.MIGRATION_2_3, LedgerDb.MIGRATION_3_4).build()) }
     val backup: BackupEngine by lazy { BackupEngine(this, ledger) }
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {

@@ -37,6 +37,7 @@ import java.time.*
     val counts by vm.counts.collectAsStateWithLifecycle()
     val settlements by vm.settlements.collectAsStateWithLifecycle()
     val settlementItems by vm.items.collectAsStateWithLifecycle()
+    val wheelStrength by vm.app.wheelPreferences.strength.collectAsStateWithLifecycle()
     var calendar by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var correctionConfirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
@@ -71,7 +72,7 @@ import java.time.*
                     Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(employee.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("${counts.filter { it.employeeId == employee.id }.sumOf { it.count }}次 · ${Rules.money(employeeTotals.find { it.employeeId == employee.id }?.amount ?: 0)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                            Text("${Rules.quantityText(counts.filter { it.employeeId == employee.id }.sumOf { it.countTenths })}次 · ${Rules.money(employeeTotals.find { it.employeeId == employee.id }?.amount ?: 0)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                         }
                         TextButton(onClick = { openDetail(employee.id, date) }) { Text("当天明细") }
                         IconButton(onClick = { expanded = !expanded }) { Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (expanded) "收起${employee.name}" else "展开${employee.name}") }
@@ -80,35 +81,45 @@ import java.time.*
                         var note by rememberSaveable(date.toString(), employee.id, task.id) { mutableStateOf("") }
                         var quantity by rememberSaveable(date.toString(), employee.id, task.id) { mutableStateOf("1") }
                         var showNote by rememberSaveable(employee.id, task.id) { mutableStateOf(false) }
+                        var wheelScrolling by remember { mutableStateOf(false) }
+                        val countTenths = runCatching { Rules.parseQuantity(quantity) }.getOrNull()
                         var busy by remember { mutableStateOf(false) }
                         val haptic = LocalHapticFeedback.current
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(task.name, fontWeight = FontWeight.Medium)
-                                Text("${Rules.money(task.wageCents)}/次 · 已记${counts.find { it.employeeId == employee.id && it.taskTypeId == task.id }?.count ?: 0}次", style = MaterialTheme.typography.labelSmall)
+                                Text("${Rules.money(task.wageCents)}/次 · 已记${Rules.quantityText(counts.find { it.employeeId == employee.id && it.taskTypeId == task.id }?.countTenths ?: 0)}次", style = MaterialTheme.typography.labelSmall)
                             }
-                            OutlinedTextField(quantity, { if (it.length <= 3 && it.all(Char::isDigit)) quantity = it }, label = { Text("次数") }, singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(68.dp), enabled = !busy)
+                            OutlinedTextField(quantity, { if (it.length <= 12) quantity = it }, label = { Text("次数") }, singleLine = true,
+                                isError = quantity.isNotEmpty() && countTenths == null,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.width(144.dp), enabled = !busy,
+                                trailingIcon = {
+                                    QuantityWheel(quantity, !busy, "${employee.name}的${task.name}次数滚轮，每格0.5次",
+                                        strength = wheelStrength,
+                                        interact = { focus.clearFocus(); keyboard?.hide() }, scrolling = { wheelScrolling = it }, select = { quantity = it })
+                                })
                             Spacer(Modifier.width(6.dp))
-                            FilledIconButton(enabled = !busy, onClick = {
+                            FilledIconButton(enabled = !busy && !wheelScrolling && countTenths != null, onClick = {
                                 focus.clearFocus(); keyboard?.hide()
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val submitted = note
-                                val count = quantity.toIntOrNull() ?: 0
+                                val count = requireNotNull(countTenths)
                                 val record: () -> Unit = {
                                     busy = true
-                                    vm.action("已记录${count}次工作", onSuccess = { if (note == submitted) note = ""; quantity = "1" }, onComplete = { busy = false }) {
-                                        vm.ledger.addMany(employee.id, task.id, date, submitted, count)
+                                    vm.action("已记录${Rules.quantityText(count)}次工作", onSuccess = { if (note == submitted) note = ""; quantity = "1" }, onComplete = { busy = false }) {
+                                        vm.ledger.addQuantity(employee.id, task.id, date, submitted, count)
                                     }
                                 }
                                 val covered = settlements.find { Rules.selectedTime(date) > it.periodStart && Rules.selectedTime(date) <= it.periodEnd }
-                                if (covered != null && count in 1..999) {
+                                if (covered != null) {
                                     val before = Rules.total(settlementItems.filter { it.settlementId == covered.id }.map { it.amountCents })
-                                    correctionConfirm = "补记${employee.name}的${task.name} ${count}次。\n原工资单合计由${Rules.money(before)}改为${Rules.money(before + task.wageCents * count)}。会保存修订记录，并排队发送修正版邮件。" to record
+                                    correctionConfirm = "补记${employee.name}的${task.name} ${Rules.quantityText(count)}次。\n原工资单合计由${Rules.money(before)}改为${Rules.money(before + Rules.quantityAmount(task.wageCents, count))}。会保存修订记录，并排队发送修正版邮件。" to record
                                 } else record()
                             }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Add, "为${employee.name}记录${task.name}") }
                         }
+                        if (quantity.isNotEmpty() && countTenths == null) Text("请输入0.1至999，最多一位小数", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        if (countTenths != null && countTenths != 10) Text("本次工资 ${Rules.money(Rules.quantityAmount(task.wageCents, countTenths))} · 店铺收入 ${Rules.money(Rules.quantityAmount(task.revenueCents, countTenths))}", style = MaterialTheme.typography.labelSmall)
                         TextButton(onClick = { showNote = !showNote }, contentPadding = PaddingValues(horizontal = 0.dp)) { Text(if (showNote) "收起备注" else "加备注（选填）", style = MaterialTheme.typography.labelSmall) }
                         if (showNote) OutlinedTextField(note, { if (it.length <= 1000) note = it }, label = { Text("本次备注（可选）") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
                     }

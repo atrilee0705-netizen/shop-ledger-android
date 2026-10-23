@@ -34,11 +34,11 @@ interface LedgerDao {
     @Upsert suspend fun saveDelivery(state: SettlementDelivery)
     @Query("SELECT * FROM settlement_delivery WHERE settlementId=:id") suspend fun delivery(id: String): SettlementDelivery?
     @Query("SELECT s.* FROM settlements s JOIN settlement_delivery d ON s.id=d.settlementId WHERE d.sentAt IS NULL ORDER BY s.periodEnd") suspend fun unsentSettlements(): List<Settlement>
-    @Query("SELECT COALESCE(SUM(wageCentsSnapshot),0) AS wage, COALESCE(SUM(revenueCentsSnapshot),0) AS revenue FROM entries WHERE completedAt >= :start AND completedAt < :end")
+    @Query("SELECT COALESCE(SUM((wageCentsSnapshot * quantityTenths + 5) / 10),0) AS wage, COALESCE(SUM((revenueCentsSnapshot * quantityTenths + 5) / 10),0) AS revenue FROM entries WHERE completedAt >= :start AND completedAt < :end")
     fun dailyTotal(start: Long, end: Long): Flow<DailyTotal>
-    @Query("SELECT e.id AS employeeId, e.name, COALESCE(SUM(w.wageCentsSnapshot),0) AS amount FROM employees e LEFT JOIN entries w ON w.employeeId=e.id AND w.completedAt>=:start AND w.completedAt<:end GROUP BY e.id ORDER BY e.createdAt, e.id")
+    @Query("SELECT e.id AS employeeId, e.name, COALESCE(SUM((w.wageCentsSnapshot * w.quantityTenths + 5) / 10),0) AS amount FROM employees e LEFT JOIN entries w ON w.employeeId=e.id AND w.completedAt>=:start AND w.completedAt<:end GROUP BY e.id ORDER BY e.createdAt, e.id")
     fun employeeTotals(start: Long, end: Long): Flow<List<EmployeeTotal>>
-    @Query("SELECT employeeId, taskTypeId, COUNT(*) AS count FROM entries WHERE completedAt>=:start AND completedAt<:end GROUP BY employeeId, taskTypeId")
+    @Query("SELECT employeeId, taskTypeId, SUM(quantityTenths) AS countTenths FROM entries WHERE completedAt>=:start AND completedAt<:end GROUP BY employeeId, taskTypeId")
     fun taskCounts(start: Long, end: Long): Flow<List<TaskCount>>
     @Query("SELECT * FROM entries WHERE employeeId=:employeeId AND completedAt>=:start AND completedAt<:end ORDER BY completedAt, createdAt, id")
     fun entryFlow(employeeId: String, start: Long, end: Long): Flow<List<WorkEntry>>
