@@ -50,6 +50,8 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun selectDate(value: LocalDate) { Rules.checkTime(Rules.start(value)); date.value = value }
     fun entries(id: String, date: LocalDate) = dao.entryFlow(id, Rules.start(date), Rules.start(date.plusDays(1)))
+    fun settledEntries(id: String) = dao.settledEntriesFlow(id)
+    fun settlementRevenue(id: String) = dao.settlementRevenueFlow(id)
     fun rangeEntries(from: LocalDate, through: LocalDate) = dao.rangeEntriesFlow(Rules.start(from), Rules.start(through.plusDays(1)))
     fun action(message: String, onSuccess: () -> Unit = {}, onComplete: () -> Unit = {}, block: suspend () -> Unit) {
         viewModelScope.launch {

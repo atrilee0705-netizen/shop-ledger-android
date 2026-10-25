@@ -153,17 +153,9 @@ class BackupEngine(private val context: Context, private val ledger: Ledger) {
             }
             val captured = ledger.db.withTransaction {
                 val slip = dao.settlement(queued.id) ?: return@withTransaction null
-                val names = dao.employees().associate { it.id to it.name }
                 val items = dao.settlementItems().filter { it.settlementId == slip.id }
                 val corrections = dao.adjustments().filter { it.settlementId == slip.id }
-                val text = buildString {
-                    appendLine("工资单 · 第${slip.revision}版${if (slip.revision > 1) "（修正版，请以本版为准）" else ""}")
-                    appendLine(Rules.periodText(slip.periodStart, slip.periodEnd))
-                    items.forEach { appendLine("${names[it.employeeId] ?: "历史员工"}：${Rules.money(it.amountCents)}") }
-                    appendLine("全员工资：${Rules.money(Rules.total(items.map { it.amountCents }))}")
-                    corrections.forEach { appendLine("${Rules.timestampFormat.format(java.time.Instant.ofEpochMilli(it.correctedAt))} ${it.reason}；合计由${Rules.money(it.previousCents)}改为${Rules.money(it.updatedCents)}") }
-                    appendLine("这是工资核算报告。请按店铺实际情况支付工资。编号：${slip.id}")
-                }
+                val text = SettlementReport.text(slip, dao.employees(), items, dao.settledEntries(slip.id), corrections)
                 slip to text
             } ?: continue
             try {

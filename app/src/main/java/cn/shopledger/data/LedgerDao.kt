@@ -29,6 +29,9 @@ interface LedgerDao {
     @Query("SELECT * FROM entries WHERE completedAt>=:start AND completedAt<:end ORDER BY completedAt, id") fun rangeEntriesFlow(start: Long, end: Long): Flow<List<WorkEntry>>
     @Query("SELECT * FROM entries WHERE settlementId IS NULL AND completedAt<=:end ORDER BY completedAt, id") suspend fun payable(end: Long): List<WorkEntry>
     @Query("SELECT * FROM entries WHERE settlementId=:id ORDER BY completedAt, id") suspend fun settledEntries(id: String): List<WorkEntry>
+    @Query("SELECT * FROM entries WHERE settlementId=:id ORDER BY completedAt, id") fun settledEntriesFlow(id: String): Flow<List<WorkEntry>>
+    @Query("SELECT COALESCE(SUM((revenueCentsSnapshot * quantityTenths + 5) / 10),0) FROM entries WHERE settlementId=:id")
+    fun settlementRevenueFlow(id: String): Flow<Long>
     @Query("UPDATE entries SET settlementId=:settlementId WHERE settlementId IS NULL AND completedAt<=:end") suspend fun assignSettlement(settlementId: String, end: Long)
     @Query("UPDATE entries SET settlementId=NULL WHERE settlementId=:id") suspend fun releaseSettlement(id: String)
     @Upsert suspend fun saveDelivery(state: SettlementDelivery)
