@@ -66,7 +66,10 @@ import java.time.*
                     Text(if (lastEnd == Rules.beginning) "从首次记账开始" else "${Rules.timestampFormat.format(Instant.ofEpochMilli(lastEnd))}之后接着算", style = MaterialTheme.typography.bodySmall)
                     DateChoice("算到这一天结束", through, Rules.today().minusDays(1)) { throughText = it.toString() }
                     Text(Rules.periodText(lastEnd, Rules.end(through)), style = MaterialTheme.typography.bodySmall)
-                    Amount("全员工资", total)
+                    Row {
+                        Amount("全员工资", total, Modifier.weight(1f))
+                        Amount("店铺总营业额", Rules.total(payable.map { it.revenueAmountCents }), Modifier.weight(1f))
+                    }
                     WageRows(payable, employees)
                     if (!validEnd) Text("请选择上次截止日之后、昨天及以前的日期。", color = MaterialTheme.colorScheme.error)
                     Text("今天和未来的账目不会进入这次结账。保存工资单不代表已经付款。", style = MaterialTheme.typography.bodySmall)
@@ -84,6 +87,8 @@ import java.time.*
                 val rows = items.filter { it.settlementId == settlement.id }
                 val corrections = adjustments.filter { it.settlementId == settlement.id }
                 val delivery = deliveries.find { it.settlementId == settlement.id }
+                val revenueFlow = remember(settlement.id) { vm.settlementRevenue(settlement.id) }
+                val revenue by revenueFlow.collectAsStateWithLifecycle<Long?>(null)
                 var expanded by rememberSaveable(settlement.id) { mutableStateOf(false) }
                 LedgerCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -91,12 +96,21 @@ import java.time.*
                             Text("截至${Rules.today(settlement.periodEnd).format(Rules.dateFormat)}", fontWeight = FontWeight.Bold)
                             Text("${if (settlement.isEarly) "手动结账" else "固定日结账"} · 第${settlement.revision}版", style = MaterialTheme.typography.labelSmall)
                         }
-                        Text(Rules.money(Rules.total(rows.map { it.amountCents })), fontWeight = FontWeight.Bold)
                     }
                     Text(Rules.periodText(settlement.periodStart, settlement.periodEnd), style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.fillMaxWidth()) {
+                        Amount("全员工资", Rules.total(rows.map { it.amountCents }), Modifier.weight(1f))
+                        val income = revenue
+                        if (income == null) Text("店铺总营业额读取中", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        else Amount("店铺总营业额", income, Modifier.weight(1f))
+                    }
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起工资明细" else "展开工资明细${if (corrections.isNotEmpty()) "与补记记录" else ""}") }
                     if (expanded) {
-                        rows.forEach { row -> Row { Text(employees.find { it.id == row.employeeId }?.name ?: "历史员工", Modifier.weight(1f)); Text(Rules.money(row.amountCents)) } }
+                        val workFlow = remember(settlement.id) { vm.settledEntries(settlement.id) }
+                        val work by workFlow.collectAsStateWithLifecycle<List<WorkEntry>?>(null)
+                        val details = work
+                        if (details == null) Text("正在读取项目次数…", style = MaterialTheme.typography.bodySmall)
+                        else WageRows(details, employees, rows)
                         corrections.forEach { Text("${Rules.timestampFormat.format(Instant.ofEpochMilli(it.correctedAt))}\n${it.reason}\n合计 ${Rules.money(it.previousCents)} → ${Rules.money(it.updatedCents)}", style = MaterialTheme.typography.bodySmall) }
                     }
                     Text(when {
@@ -122,9 +136,22 @@ import java.time.*
     } }
 }
 
-@Composable private fun WageRows(entries: List<WorkEntry>, employees: List<Employee>) {
+@Composable private fun WageRows(entries: List<WorkEntry>, employees: List<Employee>, saved: List<SettlementItem>? = null) {
     val sums = entries.groupBy { it.employeeId }
-    employees.filter { it.id in sums }.forEach { employee -> Row(Modifier.fillMaxWidth()) {
-        Text(employee.name, Modifier.weight(1f)); Text(Rules.money(Rules.total(sums[employee.id].orEmpty().map { it.wageAmountCents })))
-    } }
+    val ids = saved?.map { it.employeeId } ?: employees.filter { it.id in sums }.map { it.id }
+    ids.forEach { id ->
+        val work = sums[id].orEmpty()
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth()) {
+                Text(employees.find { it.id == id }?.name ?: "历史员工", Modifier.weight(1f))
+                Text(Rules.money(saved?.find { it.employeeId == id }?.amountCents ?: Rules.total(work.map { it.wageAmountCents })))
+            }
+            taskQuantities(work).forEach { task ->
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp)) {
+                    Text(task.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    Text("${Rules.quantityText(task.quantityTenths)}次", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
 }

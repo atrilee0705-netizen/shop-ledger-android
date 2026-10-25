@@ -22,6 +22,8 @@
 
 1.3.3将同一次提交的底层行在当天明细中合并显示，例如3次、1.5次各为一条。分组使用精确创建/完成时间、员工、任务及名称/单价快照、备注和结账归属；不同提交时间、备注或单价不合并。显示金额直接相加原行金额，不对历史重新计价。修改/删除针对显示条目的全部原行，在同一Room事务中重新读取并全部校验后处理；任何一行不存在或已经结账时整次拒绝。数据库与备份格式不变。
 
+1.3.4在待结账预览、区间查询和保存工资单的员工工资下增加项目次数；保存单的卡片同时显示全员工资与店铺总营业额。保存单按settlementId读取关联工作，收起时只查询营业额合计，展开时读取项目明细。项目按任务ID与历史名称分组，同一项目改价不拆次数，改名保留历史名称。停用项目和员工不影响统计，补记归入原单后Flow自动刷新。营业额按每条原始记录的历史收入单价和小数次数取分后相加，不用当前单价重算。邮件在同一数据库事务内读取工资单版本、员工合计、关联记录和修订信息，再交由SettlementReport生成同样的项目次数与营业额；发送状态及重试规则不变。
+
 ## 构建与测试
 
 Android Studio 打开项目根目录，使用 **JDK 21**、Android SDK Platform 35、Build Tools 35.0.0。构建工具固定为 Gradle 8.11.1 / AGP 8.9.2 / Kotlin 2.1.20，Wrapper 带官方 SHA-256 校验。
@@ -51,6 +53,7 @@ $env:GRADLE_USER_HOME = Join-Path (Get-Location) '.tools/gradle-home'
 .\gradlew.bat -PdeviceCheck=true '-Pandroid.testInstrumentationRunnerArguments.class=cn.shopledger.RecoveryUiTest' :app:connectedDebugAndroidTest
 .\gradlew.bat -PdeviceCheck=true '-Pandroid.testInstrumentationRunnerArguments.class=cn.shopledger.WheelDeviceTest' :app:connectedDebugAndroidTest
 .\gradlew.bat -PdetailCheck=true '-Pandroid.testInstrumentationRunnerArguments.class=cn.shopledger.GroupedDetailDeviceTest' :app:connectedDebugAndroidTest
+.\gradlew.bat -PdetailCheck=true '-Pandroid.testInstrumentationRunnerArguments.class=cn.shopledger.SettlementBreakdownDeviceTest' :app:connectedDebugAndroidTest
 ```
 
 `ManualVerificationTest` 单独选择运行，需要机主在120秒内亲自在手机系统弹窗中完成指纹、人脸确认或锁屏密码验证，程序随后验证新密码导出与解密。没有机主配合时不要运行该组，也不要省略类名运行所有真机测试。

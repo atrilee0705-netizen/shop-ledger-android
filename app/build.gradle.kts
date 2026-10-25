@@ -17,8 +17,8 @@ android {
         manifestPlaceholders["appLabel"] = if (detailCheck) "小店账本·明细测试" else if (deviceCheck) "小店账本·调试" else "小店账本"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.3.3"
+        versionCode = 10
+        versionName = "1.3.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
